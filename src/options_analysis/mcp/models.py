@@ -13,6 +13,7 @@ from options_analysis.domain import (
     TechnicalIndicatorDefinition,
     TechnicalIndicatorSeries,
 )
+from options_analysis.domain.research import ManualResearchAnalysis
 from options_analysis.errors import ErrorDetail
 
 
@@ -99,3 +100,7 @@ class TechnicalIndicatorListResult(MCPResult):
 
 class PositionAnalysisResult(MCPResult):
     analysis: PositionAnalysis | None = None
+
+
+class ManualResearchResult(MCPResult):
+    analysis: ManualResearchAnalysis | None = None

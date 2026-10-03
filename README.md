@@ -1,45 +1,66 @@
-# Provider-Pluggable Options Analysis
+# Option Atlas — personal options research
 
-This project will provide reusable, read-only market and brokerage data access
-for applications that analyze stock-option positions. Charles Schwab is the
-first provider adapter. MCP is the first delivery interface, not the core
-architecture.
+A local application for understanding options positions, exploring what changes
+with price, time and volatility, and keeping a clear trading plan. It runs with
+no brokerage credentials. Core development lives on `eshen/main`.
 
-Provider portability is a primary design goal. Domain models, analytics,
-application services, MCP tool schemas, and HTTP endpoints remain
-provider-neutral. A new data source should normally require only a provider
-plug-in, configuration, and provider contract tests—not changes to analysis
-logic or clients.
+## Start here
+
+```sh
+uv sync --all-groups
+uv run options-analysis-web
+```
+
+Open **http://127.0.0.1:8000**. The production UI is included in the repository.
+The initial XYZ position is a labeled synthetic example, not a live quote.
+
+**On your iPhone:** the interface has dedicated mobile Position, Analysis and
+Plan views and can be added to Safari's Home Screen. To use a phone on the same
+trusted Wi-Fi as your Mac, start with `.venv/bin/options-analysis-web --host 0.0.0.0`
+and open `http://<your-Mac-LAN-IP>:8000` on the phone. The Mac must stay awake with
+the server running. See [mobile setup and Home Screen installation](docs/MOBILE.md)
+for steps, storage/backup behavior and network limits.
+
+**Position workbench** is the main workflow:
+
+- Enter any combination of stock, calls and puts with actual entry prices,
+  current marks, dates, volatility and contract multipliers.
+- See exact single-expiry payoff, break-evens, maximum loss/profit and a loss
+  budget. Inspect a chart with spot/break-even markers and an accessible slider.
+- Stress underlying price, time and IV. Compare **total P/L from entry** with
+  **additional change from today**, including an across-date roadmap and
+  delta/gamma exposures.
+- Optionally infer per-leg IV from current marks under the pricing model.
+  See each leg's signed cost, value, P/L, intrinsic and time value.
+- Record thesis, invalidation, exit targets and a review date. Save named setups,
+  back up the local library, or export a structured brief for ChatGPT review.
+
+**Market explorer** provides provider quotes, price history, a filtered option
+chain, fifteen strategy templates and SQLite-backed drafts. Transfer a position
+into the workbench for deeper research. The default provider uses deterministic
+fixtures; Schwab requires local authorization.
+
+Manual workbench drafts/plans live in browser storage; use **Export backup** to
+keep a portable copy. Market-explorer drafts/watchlists live in SQLite. All
+analysis is local; copied/downloaded briefs are not sent to an AI service.
+
+See [the workbench guide](docs/WORKBENCH.md) for accounting conventions, model
+scope and verification. Pre-expiration values are European-model estimates;
+they do not simulate early assignment, margin, tax, or executable fills.
+Multiple-expiration scenarios stop at the first expiry and omit misleading
+single-expiry risk bounds. Rule-based findings explain inputs and assumptions;
+they are not predictions or automated trading instructions.
+
+The provider-neutral Python services are available through HTTP and MCP.
+Manual analysis uses `POST /api/v1/research/analyze` and
+`options_analyze_manual_position`; provider-enriched analysis remains available.
+Domain models and calculators are independent of provider adapters and the UI.
 
 Repository: https://github.com/xuemingshen-oracle/options-analysis-mcp
 
-## Current checkpoint
-
-Milestone 6N is complete. A responsive React workspace is bundled into the
-Python package and served by the local-only FastAPI facade, while MCP and HTTP
-reuse the same provider-neutral services. The UI provides a persistent
-SQLite-backed watchlist, selected-symbol quote summary, detailed option chain,
-and a fifteen-template strategy builder with combined Greeks, risk bounds,
-break-evens, expiration payoff, and delta-gamma scenarios. Calendar and
-diagonal workflows automatically load the next available expiration. Named
-strategy drafts persist locally and reopen with current provider quotes. The
-interface text can be adjusted from 90% through 130% and persists in the local
-browser. A responsive underlying-price chart provides one-minute, five-minute,
-daily, weekly, and monthly views. A versioned, credential-free replay provider
-can load validated canonical quote, chain, and history bundles into the same
-MCP, HTTP, UI, and analytics paths. The interface now follows system appearance
-by default or persists an explicit light/dark choice, with semantic color tokens
-across charts, tables, warnings, and controls. Live Schwab activation remains a
-local step requiring your developer application. The underlying chart now
-requests and renders independent SMA 10, SMA 20, and SMA 50 overlays. Indicator
-calculation, discovery, and result models are provider-neutral, so future
-technical signals reuse normalized bars instead of changing source adapters.
-
-Read these documents first:
-
-- DESIGN.md — scope, architecture, models, tools, security, tests, and milestones.
-- STATUS.md — durable checkpoint and instructions for continuing in another session.
-- TODO.md — canonical cross-session backlog with stable task IDs and dependencies.
+- [DESIGN.md](DESIGN.md) — original architecture and provider boundaries.
+- [STATUS.md](STATUS.md) — current checkpoint and validation.
+- [TODO.md](TODO.md) — remaining work and experimental branches.
 
 ## What works
 
@@ -57,6 +78,8 @@ Read these documents first:
   chains, and can calculate optional registered technical-indicator series.
 - `options_list_technical_indicators` describes available indicators and their
   parameter syntax without coupling an MCP client to built-in implementations.
+- `options_analyze_manual_position` analyzes explicitly entered stock/options,
+  including modeled time/IV scenarios, optional mark-calibrated IV and review findings.
 - `options_analyze_positions` analyzes 1–100 signed equity, ETF, or option legs.
   Positive quantity is long and negative quantity is short.
 - The fake provider supplies deterministic quotes, expirations, chains, selected

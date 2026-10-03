@@ -25,7 +25,7 @@ async def test_info_and_provider_endpoints_are_read_only(app) -> None:  # type: 
     assert info.status_code == 200
     assert info.json()["info"] == {
         "name": "options-analysis",
-        "version": "0.8.1",
+        "version": "0.9.0",
         "environment": "development",
         "read_only": True,
         "default_market_data_provider": "fake",

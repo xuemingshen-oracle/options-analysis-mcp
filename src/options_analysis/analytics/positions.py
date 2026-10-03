@@ -30,7 +30,7 @@ def analyze_enriched_positions(
     if not positions:
         raise ValueError("at least one position is required")
 
-    warnings: list[DataQualityWarning] = []
+    warnings = _quote_warnings(positions)
     net_market_value = _complete_sum(item.market_value for item in positions)
     net_cost_basis = _complete_sum(item.cost_basis for item in positions)
     if net_market_value is None:
@@ -71,7 +71,9 @@ def analyze_enriched_positions(
         warnings.append(
             _warning(
                 "incomplete_greeks",
-                "Aggregate exposures identify legs with missing provider Greeks.",
+                "Some provider Greeks are missing. Incomplete exposures are partial "
+                "sums, not the total position risk; delta-gamma scenarios require "
+                "complete delta and gamma.",
                 "aggregate_greeks",
             )
         )
@@ -91,7 +93,33 @@ def analyze_enriched_positions(
             )
         )
 
-    can_payoff = underlying_symbol is not None and len(expirations) <= 1
+    unsupported_terms = tuple(
+        item.instrument.symbol
+        for item in positions
+        if item.instrument.option is not None
+        and (
+            item.instrument.option.is_adjusted is True
+            or item.instrument.option.deliverables
+        )
+    )
+    if unsupported_terms:
+        warnings.append(
+            _warning(
+                "unsupported_payoff_terms",
+                "Expiration payoff, break-even, and risk bounds are unavailable for "
+                "adjusted contracts or explicit deliverables that this model cannot "
+                "value: " + ", ".join(unsupported_terms) + ".",
+                "payoff_points",
+                "break_even_prices",
+                "max_profit",
+                "max_loss",
+            )
+        )
+    can_payoff = (
+        underlying_symbol is not None
+        and len(expirations) <= 1
+        and not unsupported_terms
+    )
     payoff_points: tuple[PayoffPoint, ...] = ()
     break_evens: tuple[Decimal, ...] = ()
     max_profit: Decimal | None = None
@@ -117,12 +145,14 @@ def analyze_enriched_positions(
         "Quantities are signed; positive is long and negative is short.",
         "Option premiums and Greeks are per underlying unit and use each multiplier.",
         (
-            "Expiration payoff assumes one shared expiration and ignores fees and "
-            "exercise friction."
+            "Expiration payoff assumes standard contract deliverables, one shared "
+            "expiration, and ignores fees and exercise friction. Unknown adjustment "
+            "status is assumed standard; confirm the contract terms."
         ),
         (
-            "Price scenarios use a local delta-gamma approximation with volatility "
-            "and time unchanged."
+            "Price scenarios estimate the change in position value from today, not "
+            "total profit/loss since entry. They use a local delta-gamma approximation "
+            "with volatility and time unchanged; large moves can be inaccurate."
         ),
     )
     return PositionAnalysis(
@@ -145,6 +175,27 @@ def analyze_enriched_positions(
         assumptions=assumptions,
         warnings=tuple(warnings),
     )
+
+
+def _quote_warnings(
+    positions: tuple[PositionLeg, ...],
+) -> list[DataQualityWarning]:
+    warnings: list[DataQualityWarning] = []
+    for index, position in enumerate(positions):
+        quote = position.current_quote
+        if quote is None:
+            continue
+        for warning in quote.warnings:
+            prefix = f"positions[{index}].current_quote"
+            warnings.append(
+                DataQualityWarning(
+                    code=warning.code,
+                    message=f"{position.instrument.symbol}: {warning.message}",
+                    fields=tuple(f"{prefix}.{field}" for field in warning.fields)
+                    or (prefix,),
+                )
+            )
+    return warnings
 
 
 def _aggregate_greeks(positions: tuple[PositionLeg, ...]) -> AggregateGreeks:
@@ -243,6 +294,11 @@ def _payoff_prices(
             max(Decimal(), underlying_price * (Decimal("1") + move))
             for move in scenario_moves
         )
+    # Include the final linear segment beyond the highest strike. Otherwise a
+    # far out-of-the-money call can appear to have no upside in the payoff chart.
+    highest = max(values)
+    if highest > 0:
+        values.add(highest * Decimal("1.2"))
     return tuple(sorted(values))
 
 

@@ -14,6 +14,10 @@ import {
   saveStrategyDraft,
 } from "./api";
 import AnalysisPanel from "./AnalysisPanel";
+import PositionWorkbench from "./PositionWorkbench";
+import MobileAppHelp, { AppPreferences } from "./MobileAppHelp";
+import { fromProviderAnalysis } from "./research";
+import type { WorkbenchSetup } from "./workbenchState";
 import PriceHistoryChart from "./PriceHistoryChart";
 import {
   buildChainRows,
@@ -55,15 +59,12 @@ import type {
 } from "./types";
 import {
   applyThemePreference,
-  FONT_SCALE_OPTIONS,
   loadFontScale,
   loadThemePreference,
   persistFontScale,
   persistThemePreference,
-  stepFontScale,
 } from "./preferences";
 import type { FontScale, ThemePreference } from "./preferences";
-import ThemeControls from "./ThemeControls";
 import WarningDisclosure from "./WarningDisclosure";
 
 function money(value: DecimalValue | null | undefined): string {
@@ -102,17 +103,11 @@ function percent(value: DecimalValue | null | undefined, digits = 1): string {
   return parsed === null ? "—" : `${(parsed * 100).toFixed(digits)}%`;
 }
 
-function App() {
-  const [theme, setTheme] = useState<ThemePreference>(() =>
-    loadThemePreference(window.localStorage),
-  );
-  const [fontScale, setFontScale] = useState<FontScale>(() => {
-    try {
-      return loadFontScale(window.localStorage);
-    } catch {
-      return 100;
-    }
-  });
+function MarketExplorer({
+  onOpenResearch,
+}: {
+  onOpenResearch: (analysis: PositionAnalysis, name: string) => void;
+}) {
   const [symbols, setSymbols] = useState<string[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState("SPY");
   const [symbolInput, setSymbolInput] = useState("");
@@ -125,8 +120,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [historyResolution, setHistoryResolution] =
     useState<HistoryResolution>("1d");
-  const [priceHistory, setPriceHistory] =
-    useState<PriceHistorySnapshot | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceHistorySnapshot | null>(
+    null,
+  );
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [watchlistBusy, setWatchlistBusy] = useState(true);
@@ -145,6 +141,9 @@ function App() {
   const [filterError, setFilterError] = useState<string | null>(null);
   const [draftLegs, setDraftLegs] = useState<DraftLeg[]>([]);
   const [analysis, setAnalysis] = useState<PositionAnalysis | null>(null);
+  const [valuationMode, setValuationMode] = useState<
+    "mark" | "midpoint" | "liquidation"
+  >("mark");
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [strategyLoading, setStrategyLoading] = useState(false);
@@ -153,21 +152,13 @@ function App() {
   const [draftsBusy, setDraftsBusy] = useState(true);
   const [draftsError, setDraftsError] = useState<string | null>(null);
   const strategyRequest = useRef(0);
-  const hydratedAnalysis = useRef(false);
+  const draftRestoreSequence = useRef(0);
+  const draftRestoreController = useRef<AbortController | null>(null);
+  const symbolDrafts = useRef(
+    new Map<string, { legs: DraftLeg[]; name: string; strategy: string }>(),
+  );
 
-  useEffect(() => {
-    applyThemePreference(document.documentElement, theme);
-    persistThemePreference(window.localStorage, theme);
-  }, [theme]);
-
-  useEffect(() => {
-    document.documentElement.dataset.fontScale = String(fontScale);
-    try {
-      persistFontScale(window.localStorage, fontScale);
-    } catch {
-      // Browser storage may be disabled; the in-memory preference still works.
-    }
-  }, [fontScale]);
+  useEffect(() => () => draftRestoreController.current?.abort(), []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -179,9 +170,12 @@ function App() {
         );
       })
       .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        if (reason instanceof DOMException && reason.name === "AbortError")
+          return;
         setWatchlistError(
-          reason instanceof Error ? reason.message : "Unable to load the watchlist.",
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load the watchlist.",
         );
       })
       .finally(() => {
@@ -195,9 +189,12 @@ function App() {
     loadStrategyDrafts(controller.signal)
       .then(setSavedDrafts)
       .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        if (reason instanceof DOMException && reason.name === "AbortError")
+          return;
         setDraftsError(
-          reason instanceof Error ? reason.message : "Unable to load saved drafts.",
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load saved drafts.",
         );
       })
       .finally(() => {
@@ -211,7 +208,8 @@ function App() {
     loadStrategies(controller.signal)
       .then(setStrategies)
       .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        if (reason instanceof DOMException && reason.name === "AbortError")
+          return;
         setAnalysisError(
           reason instanceof Error
             ? reason.message
@@ -249,7 +247,8 @@ function App() {
         }
       })
       .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        if (reason instanceof DOMException && reason.name === "AbortError")
+          return;
         const message =
           reason instanceof ApiError || reason instanceof Error
             ? reason.message
@@ -278,10 +277,13 @@ function App() {
     })
       .then(setPriceHistory)
       .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        if (reason instanceof DOMException && reason.name === "AbortError")
+          return;
         setPriceHistory(null);
         setHistoryError(
-          reason instanceof Error ? reason.message : "Unable to load price history.",
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load price history.",
         );
       })
       .finally(() => {
@@ -296,11 +298,6 @@ function App() {
       setAnalysisLoading(false);
       return;
     }
-    if (hydratedAnalysis.current) {
-      hydratedAnalysis.current = false;
-      setAnalysisLoading(false);
-      return;
-    }
     const controller = new AbortController();
     setAnalysisLoading(true);
     setAnalysisError(null);
@@ -308,20 +305,24 @@ function App() {
       toAnalysisRequestLegs(draftLegs),
       draftLegs[0].quote.provider_id,
       controller.signal,
+      valuationMode,
     )
       .then(setAnalysis)
       .catch((reason: unknown) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        if (reason instanceof DOMException && reason.name === "AbortError")
+          return;
         setAnalysis(null);
         setAnalysisError(
-          reason instanceof Error ? reason.message : "Unable to analyze the draft.",
+          reason instanceof Error
+            ? reason.message
+            : "Unable to analyze the draft.",
         );
       })
       .finally(() => {
         if (!controller.signal.aborted) setAnalysisLoading(false);
       });
     return () => controller.abort();
-  }, [draftLegs]);
+  }, [draftLegs, valuationMode]);
 
   const rows = useMemo(() => {
     const filters: ChainFilters = {
@@ -357,8 +358,7 @@ function App() {
     setWatchlistError(null);
     try {
       setSymbols(await addWatchlistSymbol(normalized));
-      setSelectedSymbol(normalized);
-      resetSymbolWorkspace();
+      selectSymbol(normalized);
       setSymbolInput("");
     } catch (reason) {
       setWatchlistError(
@@ -376,12 +376,13 @@ function App() {
       const remaining = await deleteWatchlistSymbol(symbol);
       setSymbols(remaining);
       if (selectedSymbol === symbol) {
-        setSelectedSymbol(remaining[0] ?? "");
-        resetSymbolWorkspace();
+        selectSymbol(remaining[0] ?? "");
       }
     } catch (reason) {
       setWatchlistError(
-        reason instanceof Error ? reason.message : "Unable to remove the symbol.",
+        reason instanceof Error
+          ? reason.message
+          : "Unable to remove the symbol.",
       );
     } finally {
       setWatchlistBusy(false);
@@ -389,13 +390,41 @@ function App() {
   }
 
   function selectSymbol(symbol: string) {
+    if (symbol === selectedSymbol) return;
+    cancelDraftRestore();
+    rememberCurrentDraft();
     setSelectedSymbol(symbol);
     resetSymbolWorkspace();
+    const retained = symbolDrafts.current.get(symbol);
+    if (retained) {
+      setDraftLegs(retained.legs);
+      setDraftName(retained.name);
+      setStrategyId(retained.strategy);
+    }
+  }
+
+  function rememberCurrentDraft() {
+    if (selectedSymbol)
+      symbolDrafts.current.set(selectedSymbol, {
+        legs: draftLegs,
+        name: draftName,
+        strategy: strategyId,
+      });
+  }
+
+  function cancelDraftRestore() {
+    if (!draftRestoreController.current) return;
+    draftRestoreController.current.abort();
+    draftRestoreController.current = null;
+    draftRestoreSequence.current += 1;
+    setDraftsBusy(false);
   }
 
   function resetSymbolWorkspace() {
-    hydratedAnalysis.current = false;
     setExpiration("");
+    setWorkspace(null);
+    setAnalysis(null);
+    setAnalysisError(null);
     setDraftLegs([]);
     setDraftName("");
     setStrikeFromInput("");
@@ -435,28 +464,48 @@ function App() {
 
   function toggleContract(contract: Quote | undefined) {
     if (!contract) return;
+    cancelDraftRestore();
     const symbol = contract.instrument.provider_symbol;
     setStrategyId("custom");
     setDraftName("");
-    setDraftLegs((current) =>
-      current.some((leg) => leg.quote.instrument.provider_symbol === symbol)
-        ? current.filter((leg) => leg.quote.instrument.provider_symbol !== symbol)
-        : [...current, draftFromQuote(contract)],
-    );
+    try {
+      const alreadySelected = draftLegs.some(
+        (leg) => leg.quote.instrument.provider_symbol === symbol,
+      );
+      const addedLeg = alreadySelected ? null : draftFromQuote(contract);
+      setDraftLegs((current) =>
+        alreadySelected
+          ? current.filter(
+              (leg) => leg.quote.instrument.provider_symbol !== symbol,
+            )
+          : [...current, addedLeg!],
+      );
+      setAnalysisError(null);
+    } catch (reason) {
+      setAnalysisError(
+        reason instanceof Error
+          ? reason.message
+          : "This contract has no usable quote.",
+      );
+    }
   }
 
   function updateDraftLeg(
     symbol: string,
     update: Partial<Pick<DraftLeg, "action" | "quantity" | "entryPrice">>,
   ) {
+    cancelDraftRestore();
     setDraftLegs((current) =>
       current.map((leg) =>
-        leg.quote.instrument.provider_symbol === symbol ? { ...leg, ...update } : leg,
+        leg.quote.instrument.provider_symbol === symbol
+          ? { ...leg, ...update }
+          : leg,
       ),
     );
   }
 
   async function selectStrategy(template: StrategyTemplate) {
+    cancelDraftRestore();
     const requestId = ++strategyRequest.current;
     setStrategyId(template.template_id);
     setDraftName("");
@@ -467,7 +516,8 @@ function App() {
       let secondaryWorkspace: WorkspaceSnapshot | undefined;
       if (requiresSecondaryExpiration(template)) {
         const nearExpiration =
-          expiration || workspace.chain.contracts[0]?.instrument.option?.expiration_date;
+          expiration ||
+          workspace.chain.contracts[0]?.instrument.option?.expiration_date;
         const laterExpiration = nextExpiration(
           workspace.expirations,
           nearExpiration,
@@ -539,7 +589,12 @@ function App() {
   }
 
   async function loadSavedDraft(draft: StrategyDraft) {
+    cancelDraftRestore();
+    const restoreId = ++draftRestoreSequence.current;
+    const controller = new AbortController();
+    draftRestoreController.current = controller;
     strategyRequest.current += 1;
+    setStrategyLoading(false);
     setDraftsBusy(true);
     setDraftsError(null);
     try {
@@ -551,21 +606,40 @@ function App() {
           average_open_price: leg.average_open_price,
         })),
         draft.provider_id,
+        controller.signal,
+        valuationMode,
       );
+      if (
+        controller.signal.aborted ||
+        restoreId !== draftRestoreSequence.current
+      )
+        return;
       const restoredLegs = draftFromAnalysis(restoredAnalysis);
+      rememberCurrentDraft();
       resetSymbolWorkspace();
-      hydratedAnalysis.current = true;
       setSelectedSymbol(draft.underlying_symbol);
       setStrategyId(draft.strategy_template_id ?? "custom");
       setDraftName(draft.name);
-      setAnalysis(restoredAnalysis);
+      // Quotes hydrate the legs; the regular effect values them using the
+      // current mode, which may have changed while this restore was pending.
+      setAnalysisLoading(true);
       setDraftLegs(restoredLegs);
     } catch (reason) {
+      if (
+        controller.signal.aborted ||
+        restoreId !== draftRestoreSequence.current
+      )
+        return;
       setDraftsError(
-        reason instanceof Error ? reason.message : "Unable to restore the draft.",
+        reason instanceof Error
+          ? reason.message
+          : "Unable to restore the draft.",
       );
     } finally {
-      setDraftsBusy(false);
+      if (restoreId === draftRestoreSequence.current) {
+        draftRestoreController.current = null;
+        setDraftsBusy(false);
+      }
     }
   }
 
@@ -579,7 +653,9 @@ function App() {
       }
     } catch (reason) {
       setDraftsError(
-        reason instanceof Error ? reason.message : "Unable to remove the draft.",
+        reason instanceof Error
+          ? reason.message
+          : "Unable to remove the draft.",
       );
     } finally {
       setDraftsBusy(false);
@@ -611,7 +687,6 @@ function App() {
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">Skip to market workspace</a>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">OA</span>
@@ -634,7 +709,11 @@ function App() {
             placeholder="Add symbol"
             value={symbolInput}
           />
-          <button aria-label="Add symbol" disabled={watchlistBusy} type="submit">
+          <button
+            aria-label="Add symbol"
+            disabled={watchlistBusy}
+            type="submit"
+          >
             +
           </button>
         </form>
@@ -651,7 +730,9 @@ function App() {
                 type="button"
               >
                 <span>{symbol}</span>
-                <small>{symbol === selectedSymbol ? money(quote?.mark) : "View"}</small>
+                <small>
+                  {symbol === selectedSymbol ? money(quote?.mark) : "View"}
+                </small>
               </button>
               <button
                 aria-label={`Remove ${symbol}`}
@@ -667,38 +748,6 @@ function App() {
           ))}
         </nav>
 
-        <ThemeControls onChange={setTheme} theme={theme} />
-
-        <div className="preference-card text-size-card">
-          <span>Text size</span>
-          <div aria-label="Text size" className="text-size-controls" role="group">
-            <button
-              aria-label="Decrease text size"
-              disabled={fontScale === FONT_SCALE_OPTIONS[0]}
-              onClick={() => setFontScale((current) => stepFontScale(current, -1))}
-              type="button"
-            >
-              A−
-            </button>
-            <button
-              aria-label={`Reset text size, current ${fontScale} percent`}
-              onClick={() => setFontScale(100)}
-              title="Reset text size"
-              type="button"
-            >
-              {fontScale}%
-            </button>
-            <button
-              aria-label="Increase text size"
-              disabled={fontScale === FONT_SCALE_OPTIONS.at(-1)}
-              onClick={() => setFontScale((current) => stepFontScale(current, 1))}
-              type="button"
-            >
-              A+
-            </button>
-          </div>
-        </div>
-
         <div className="connection-card">
           <span className="status-dot" />
           <div>
@@ -709,7 +758,9 @@ function App() {
       </aside>
 
       <main
-        aria-busy={loading || historyLoading || analysisLoading || strategyLoading}
+        aria-busy={
+          loading || historyLoading || analysisLoading || strategyLoading
+        }
         id="main-content"
         tabIndex={-1}
       >
@@ -742,10 +793,22 @@ function App() {
             />
           </div>
           <div className="quote-grid">
-            <div><span>Bid</span><strong>{money(quote?.bid)}</strong></div>
-            <div><span>Ask</span><strong>{money(quote?.ask)}</strong></div>
-            <div><span>Last</span><strong>{money(quote?.last)}</strong></div>
-            <div><span>Volume</span><strong>{compact(quote?.volume)}</strong></div>
+            <div>
+              <span>Bid</span>
+              <strong>{money(quote?.bid)}</strong>
+            </div>
+            <div>
+              <span>Ask</span>
+              <strong>{money(quote?.ask)}</strong>
+            </div>
+            <div>
+              <span>Last</span>
+              <strong>{money(quote?.last)}</strong>
+            </div>
+            <div>
+              <span>Volume</span>
+              <strong>{compact(quote?.volume)}</strong>
+            </div>
           </div>
         </section>
 
@@ -835,7 +898,9 @@ function App() {
               <label>
                 <span>Minimum OI</span>
                 <select
-                  onChange={(event) => setMinOpenInterest(Number(event.target.value))}
+                  onChange={(event) =>
+                    setMinOpenInterest(Number(event.target.value))
+                  }
                   value={minOpenInterest}
                 >
                   <option value="0">Any</option>
@@ -864,14 +929,22 @@ function App() {
 
             <div className="chain-meta">
               <span>{rows.length} strikes shown</span>
-              <span>Click + to add a contract to the draft</span>
+              <span>Tap + to add a contract to the draft</span>
+              <span className="mobile-chain-hint">
+                Swipe the chain to compare calls and puts →
+              </span>
               <WarningDisclosure
                 title="Chain warnings"
                 warnings={workspace?.chain.warnings ?? []}
               />
             </div>
 
-            <div className="table-wrap">
+            <div
+              className="table-wrap"
+              aria-label="Scrollable option chain"
+              role="region"
+              tabIndex={0}
+            >
               <table>
                 <caption className="sr-only">
                   Calls and puts for {selectedSymbol} expiring {expiration}
@@ -883,36 +956,128 @@ function App() {
                     <th colSpan={7}>Puts</th>
                   </tr>
                   <tr className="subhead">
-                    <th /><th>Delta</th>
-                    <th aria-sort={sortKey === "call_iv" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}><button className="sort-button" onClick={() => changeSort("call_iv")} type="button">IV{sortLabel("call_iv")}</button></th>
-                    <th>Bid</th><th>Ask</th><th>Spread</th>
-                    <th aria-sort={sortKey === "call_open_interest" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}><button className="sort-button" onClick={() => changeSort("call_open_interest")} type="button">OI{sortLabel("call_open_interest")}</button></th>
-                    <th aria-sort={sortKey === "strike" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}><button className="sort-button" onClick={() => changeSort("strike")} type="button">Price{sortLabel("strike")}</button></th>
-                    <th /><th>Delta</th>
-                    <th aria-sort={sortKey === "put_iv" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}><button className="sort-button" onClick={() => changeSort("put_iv")} type="button">IV{sortLabel("put_iv")}</button></th>
-                    <th>Bid</th><th>Ask</th><th>Spread</th>
-                    <th aria-sort={sortKey === "put_open_interest" ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}><button className="sort-button" onClick={() => changeSort("put_open_interest")} type="button">OI{sortLabel("put_open_interest")}</button></th>
+                    <th />
+                    <th>Delta</th>
+                    <th
+                      aria-sort={
+                        sortKey === "call_iv"
+                          ? sortDirection === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      <button
+                        className="sort-button"
+                        onClick={() => changeSort("call_iv")}
+                        type="button"
+                      >
+                        IV{sortLabel("call_iv")}
+                      </button>
+                    </th>
+                    <th>Bid</th>
+                    <th>Ask</th>
+                    <th>Spread</th>
+                    <th
+                      aria-sort={
+                        sortKey === "call_open_interest"
+                          ? sortDirection === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      <button
+                        className="sort-button"
+                        onClick={() => changeSort("call_open_interest")}
+                        type="button"
+                      >
+                        OI{sortLabel("call_open_interest")}
+                      </button>
+                    </th>
+                    <th
+                      aria-sort={
+                        sortKey === "strike"
+                          ? sortDirection === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      <button
+                        className="sort-button"
+                        onClick={() => changeSort("strike")}
+                        type="button"
+                      >
+                        Price{sortLabel("strike")}
+                      </button>
+                    </th>
+                    <th />
+                    <th>Delta</th>
+                    <th
+                      aria-sort={
+                        sortKey === "put_iv"
+                          ? sortDirection === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      <button
+                        className="sort-button"
+                        onClick={() => changeSort("put_iv")}
+                        type="button"
+                      >
+                        IV{sortLabel("put_iv")}
+                      </button>
+                    </th>
+                    <th>Bid</th>
+                    <th>Ask</th>
+                    <th>Spread</th>
+                    <th
+                      aria-sort={
+                        sortKey === "put_open_interest"
+                          ? sortDirection === "asc"
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      <button
+                        className="sort-button"
+                        onClick={() => changeSort("put_open_interest")}
+                        type="button"
+                      >
+                        OI{sortLabel("put_open_interest")}
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.strike}>
                       <td>
-                        {row.call ? <div className="contract-actions">
-                          <button
-                            aria-label={`Toggle call at ${row.strike}`}
-                            aria-pressed={selectedContracts.has(row.call.instrument.provider_symbol)}
-                            className={`contract-picker ${selectedContracts.has(row.call.instrument.provider_symbol) ? "selected" : ""}`}
-                            onClick={() => toggleContract(row.call)}
-                            type="button"
-                          >+</button>
-                          <WarningDisclosure
-                            compact
-                            provenance={row.call.field_provenance}
-                            title={`${row.call.instrument.provider_symbol} warnings`}
-                            warnings={row.call.warnings}
-                          />
-                        </div> : null}
+                        {row.call ? (
+                          <div className="contract-actions">
+                            <button
+                              aria-label={`Toggle call at ${row.strike}`}
+                              aria-pressed={selectedContracts.has(
+                                row.call.instrument.provider_symbol,
+                              )}
+                              className={`contract-picker ${selectedContracts.has(row.call.instrument.provider_symbol) ? "selected" : ""}`}
+                              onClick={() => toggleContract(row.call)}
+                              type="button"
+                            >
+                              +
+                            </button>
+                            <WarningDisclosure
+                              compact
+                              provenance={row.call.field_provenance}
+                              title={`${row.call.instrument.provider_symbol} warnings`}
+                              warnings={row.call.warnings}
+                            />
+                          </div>
+                        ) : null}
                       </td>
                       <td>{number(row.call?.greeks?.delta)}</td>
                       <td>{percent(row.call?.implied_volatility)}</td>
@@ -923,25 +1088,35 @@ function App() {
                       <td className="strike">
                         <strong>{money(row.strike)}</strong>
                         <small>
-                          {moneynessPercent(row.strike, decimal(quote?.mark))?.toFixed(1) ?? "—"}%
+                          {moneynessPercent(
+                            row.strike,
+                            decimal(quote?.mark),
+                          )?.toFixed(1) ?? "—"}
+                          %
                         </small>
                       </td>
                       <td>
-                        {row.put ? <div className="contract-actions">
-                          <button
-                            aria-label={`Toggle put at ${row.strike}`}
-                            aria-pressed={selectedContracts.has(row.put.instrument.provider_symbol)}
-                            className={`contract-picker ${selectedContracts.has(row.put.instrument.provider_symbol) ? "selected" : ""}`}
-                            onClick={() => toggleContract(row.put)}
-                            type="button"
-                          >+</button>
-                          <WarningDisclosure
-                            compact
-                            provenance={row.put.field_provenance}
-                            title={`${row.put.instrument.provider_symbol} warnings`}
-                            warnings={row.put.warnings}
-                          />
-                        </div> : null}
+                        {row.put ? (
+                          <div className="contract-actions">
+                            <button
+                              aria-label={`Toggle put at ${row.strike}`}
+                              aria-pressed={selectedContracts.has(
+                                row.put.instrument.provider_symbol,
+                              )}
+                              className={`contract-picker ${selectedContracts.has(row.put.instrument.provider_symbol) ? "selected" : ""}`}
+                              onClick={() => toggleContract(row.put)}
+                              type="button"
+                            >
+                              +
+                            </button>
+                            <WarningDisclosure
+                              compact
+                              provenance={row.put.field_provenance}
+                              title={`${row.put.instrument.provider_symbol} warnings`}
+                              warnings={row.put.warnings}
+                            />
+                          </div>
+                        ) : null}
                       </td>
                       <td>{number(row.put?.greeks?.delta)}</td>
                       <td>{percent(row.put?.implied_volatility)}</td>
@@ -954,7 +1129,9 @@ function App() {
                 </tbody>
               </table>
               {!loading && rows.length === 0 ? (
-                <div className="empty-state">No contracts match these filters.</div>
+                <div className="empty-state">
+                  No contracts match these filters.
+                </div>
               ) : null}
             </div>
           </div>
@@ -972,7 +1149,9 @@ function App() {
             <div className="strategy-list">
               {strategies.map((template) => (
                 <button
-                  className={strategyId === template.template_id ? "active" : ""}
+                  className={
+                    strategyId === template.template_id ? "active" : ""
+                  }
                   disabled={loading || strategyLoading}
                   key={template.template_id}
                   onClick={() => selectStrategy(template)}
@@ -980,13 +1159,18 @@ function App() {
                 >
                   <span>
                     <strong>{template.display_name}</strong>
-                    <small>{template.outlook} · {template.legs.length || "any"} legs</small>
+                    <small>
+                      {template.outlook} · {template.legs.length || "any"} legs
+                    </small>
                   </span>
                   <span>→</span>
                 </button>
               ))}
             </div>
-            <section className="saved-drafts" aria-labelledby="saved-drafts-heading">
+            <section
+              className="saved-drafts"
+              aria-labelledby="saved-drafts-heading"
+            >
               <div className="draft-heading">
                 <span className="eyebrow" id="saved-drafts-heading">
                   Saved setups
@@ -997,15 +1181,24 @@ function App() {
                 <input
                   aria-label="Strategy draft name"
                   maxLength={80}
-                  onChange={(event) => setDraftName(event.target.value)}
+                  onChange={(event) => {
+                    cancelDraftRestore();
+                    setDraftName(event.target.value);
+                  }}
                   placeholder="Name this setup"
                   value={draftName}
                 />
                 <button
                   disabled={draftsBusy || !draftLegs.length}
                   type="submit"
-                >Save</button>
+                >
+                  Save
+                </button>
               </form>
+              <p className="draft-empty">
+                Drafts stay available when switching symbols in this session.
+                Save a named setup to keep it after closing the browser.
+              </p>
               <div className="saved-draft-list">
                 {savedDrafts.map((draft) => (
                   <div className="saved-draft-row" key={draft.draft_id}>
@@ -1016,7 +1209,8 @@ function App() {
                     >
                       <strong>{draft.name}</strong>
                       <small>
-                        {draft.underlying_symbol} · {draft.legs.length} legs · {draft.provider_id}
+                        {draft.underlying_symbol} · {draft.legs.length} legs ·{" "}
+                        {draft.provider_id}
                       </small>
                     </button>
                     <button
@@ -1025,7 +1219,9 @@ function App() {
                       disabled={draftsBusy}
                       onClick={() => removeSavedDraft(draft)}
                       type="button"
-                    >×</button>
+                    >
+                      ×
+                    </button>
                   </div>
                 ))}
               </div>
@@ -1036,16 +1232,21 @@ function App() {
                 {draftLegs.length ? (
                   <button
                     onClick={() => {
+                      cancelDraftRestore();
                       setDraftLegs([]);
                       setStrategyId("custom");
                       setDraftName("");
                     }}
                     type="button"
-                  >Clear</button>
+                  >
+                    Clear
+                  </button>
                 ) : null}
               </div>
               {selectedStrategy ? (
-                <p className="strategy-description">{selectedStrategy.description}</p>
+                <p className="strategy-description">
+                  {selectedStrategy.description}
+                </p>
               ) : null}
               {draftLegs.length === 0 ? (
                 <p className="draft-empty">
@@ -1077,11 +1278,15 @@ function App() {
                       </select>
                       <input
                         aria-label={`Quantity for ${symbol}`}
-                        max="99"
+                        inputMode="numeric"
+                        max="1000000"
                         min="1"
                         onChange={(event) =>
                           updateDraftLeg(symbol, {
-                            quantity: Math.max(1, Number(event.target.value) || 1),
+                            quantity: Math.max(
+                              1,
+                              Number(event.target.value) || 1,
+                            ),
                           })
                         }
                         type="number"
@@ -1089,26 +1294,79 @@ function App() {
                       />
                       <input
                         aria-label={`Entry price for ${symbol}`}
+                        inputMode="decimal"
                         min="0"
                         onChange={(event) =>
                           updateDraftLeg(symbol, {
-                            entryPrice: Math.max(0, Number(event.target.value) || 0),
+                            entryPrice:
+                              event.target.value === ""
+                                ? null
+                                : Math.max(0, Number(event.target.value) || 0),
                           })
                         }
                         step="0.01"
                         type="number"
-                        value={leg.entryPrice}
+                        value={leg.entryPrice ?? ""}
                       />
                       <button
                         aria-label={`Remove ${symbol} from draft`}
                         className="leg-remove"
                         onClick={() => toggleContract(leg.quote)}
                         type="button"
-                      >×</button>
+                      >
+                        ×
+                      </button>
                     </div>
                   );
                 })
               )}
+            </div>
+            <div className="research-transfer">
+              <label>
+                <span className="eyebrow">Current valuation</span>
+                <select
+                  aria-label="Current valuation"
+                  value={valuationMode}
+                  onChange={(event) =>
+                    setValuationMode(event.target.value as typeof valuationMode)
+                  }
+                >
+                  <option value="mark">Provider mark</option>
+                  <option value="midpoint">Bid / ask midpoint</option>
+                  <option value="liquidation">Close at bid / ask</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={
+                  !analysis ||
+                  analysisLoading ||
+                  strategyLoading ||
+                  draftsBusy ||
+                  !!analysisError
+                }
+                onClick={() => {
+                  if (!analysis) return;
+                  try {
+                    onOpenResearch(
+                      analysis,
+                      draftName || `${selectedSymbol} position`,
+                    );
+                  } catch (reason) {
+                    setAnalysisError(
+                      reason instanceof Error
+                        ? reason.message
+                        : "Unable to open this position.",
+                    );
+                  }
+                }}
+              >
+                Open in position workbench →
+              </button>
+              <small>
+                Review cost basis, explore time and volatility, and write a
+                trading plan.
+              </small>
             </div>
             <AnalysisPanel
               analysis={analysis}
@@ -1119,6 +1377,226 @@ function App() {
         </section>
       </main>
     </div>
+  );
+}
+
+function App() {
+  const [theme, setTheme] = useState<ThemePreference>(() => {
+    try {
+      return loadThemePreference(window.localStorage);
+    } catch {
+      return "system";
+    }
+  });
+  const [fontScale, setFontScale] = useState<FontScale>(() => {
+    try {
+      return loadFontScale(window.localStorage);
+    } catch {
+      return 100;
+    }
+  });
+  const [view, setView] = useState<"workbench" | "market">("workbench");
+  const [marketVisited, setMarketVisited] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const scrollPositions = useRef({ workbench: 0, market: 0 });
+  const [importedSetup, setImportedSetup] = useState<WorkbenchSetup | null>(
+    null,
+  );
+  useEffect(() => {
+    applyThemePreference(document.documentElement, theme);
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const updateBrowserTheme = () => {
+      const dark =
+        theme === "dark" || (theme === "system" && systemTheme.matches);
+      document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+        meta.setAttribute("content", dark ? "#111b19" : "#ffffff");
+      });
+    };
+    updateBrowserTheme();
+    systemTheme.addEventListener("change", updateBrowserTheme);
+    try {
+      persistThemePreference(window.localStorage, theme);
+    } catch {
+      /* Theme still works when browser storage is unavailable. */
+    }
+    return () => systemTheme.removeEventListener("change", updateBrowserTheme);
+  }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.dataset.fontScale = String(fontScale);
+    try {
+      persistFontScale(window.localStorage, fontScale);
+    } catch {
+      // Browser storage may be disabled; the in-memory preference still works.
+    }
+  }, [fontScale]);
+
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    let fullHeight = viewport?.height ?? window.innerHeight;
+    const update = () => {
+      const focused = document.activeElement;
+      const editing =
+        focused instanceof HTMLElement &&
+        focused.matches(
+          'textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]), [contenteditable="true"]',
+        );
+      const height = viewport?.height ?? window.innerHeight;
+      if (!editing) fullHeight = height;
+      const keyboard =
+        editing &&
+        (!viewport ||
+          fullHeight - height > 120 ||
+          window.innerHeight - height > 120);
+      document.documentElement.classList.toggle("app-keyboard-open", keyboard);
+    };
+    const resetHeight = () => {
+      fullHeight = window.innerHeight;
+      update();
+    };
+    document.addEventListener("focusin", update);
+    document.addEventListener("focusout", update);
+    viewport?.addEventListener("resize", update);
+    window.addEventListener("orientationchange", resetHeight);
+    return () => {
+      document.removeEventListener("focusin", update);
+      document.removeEventListener("focusout", update);
+      viewport?.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", resetHeight);
+      document.documentElement.classList.remove("app-keyboard-open");
+    };
+  }, []);
+
+  function switchView(next: "workbench" | "market") {
+    if (next === view) {
+      window.scrollTo({ top: 0 });
+      return;
+    }
+    scrollPositions.current[view] = window.scrollY;
+    setView(next);
+    if (next === "market") setMarketVisited(true);
+    requestAnimationFrame(() =>
+      window.scrollTo({ top: scrollPositions.current[next] }),
+    );
+  }
+
+  function openResearch(analysis: PositionAnalysis, name: string) {
+    const setup = fromProviderAnalysis(analysis, name);
+    setImportedSetup(setup);
+    scrollPositions.current.workbench = 0;
+    setView("workbench");
+    window.scrollTo({ top: 0 });
+  }
+
+  return (
+    <>
+      <a
+        className="skip-link"
+        href={view === "workbench" ? "#workbench-content" : "#main-content"}
+      >
+        Skip to workspace
+      </a>
+      <header className="app-navigation">
+        <a
+          className="app-wordmark"
+          href="#"
+          onClick={(event) => {
+            event.preventDefault();
+            switchView("workbench");
+          }}
+        >
+          <span className="brand-mark">OA</span>
+          <span>
+            Option Atlas<small>Your position, in perspective.</small>
+          </span>
+        </a>
+        <nav className="app-view-tabs" aria-label="Workspace">
+          <button
+            type="button"
+            aria-label="Position workbench"
+            aria-current={view === "workbench" ? "page" : undefined}
+            onClick={() => switchView("workbench")}
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+            >
+              <path d="M4 4v16h16M7 15l4-6 4 3 5-7" />
+            </svg>
+            <span className="app-tab-full">Position workbench</span>
+            <span className="app-tab-short" aria-hidden="true">
+              Workbench
+            </span>
+          </button>
+          <button
+            type="button"
+            aria-label="Market explorer"
+            aria-current={view === "market" ? "page" : undefined}
+            onClick={() => switchView("market")}
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+            >
+              <circle cx="10" cy="10" r="6" />
+              <path d="m15 15 5 5M7 11l2-3 2 2 2-3" />
+            </svg>
+            <span className="app-tab-full">Market explorer</span>
+            <span className="app-tab-short" aria-hidden="true">
+              Market
+            </span>
+          </button>
+        </nav>
+        <div className="app-preferences">
+          <AppPreferences
+            theme={theme}
+            onThemeChange={setTheme}
+            fontScale={fontScale}
+            onFontScaleChange={setFontScale}
+          />
+        </div>
+        <MobileAppHelp
+          theme={theme}
+          onThemeChange={setTheme}
+          fontScale={fontScale}
+          onFontScaleChange={setFontScale}
+        />
+      </header>
+      {!online ? (
+        <div className="app-offline-status" role="status">
+          <strong>You’re offline.</strong> Existing results remain visible.
+          Reconnect to the running server before calculating or loading market
+          data.
+        </div>
+      ) : null}
+      <div hidden={view !== "workbench"}>
+        <PositionWorkbench
+          initialSetup={importedSetup}
+          onImportApplied={() => setImportedSetup(null)}
+        />
+      </div>
+      <div hidden={view !== "market"}>
+        {marketVisited ? (
+          <MarketExplorer onOpenResearch={openResearch} />
+        ) : null}
+      </div>
+    </>
   );
 }
 

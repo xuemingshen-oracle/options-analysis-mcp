@@ -17,15 +17,18 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 
 from options_analysis import __version__
+from options_analysis.analytics.research import analyze_manual_position
 from options_analysis.bootstrap import Application, build_application
 from options_analysis.config import AppSettings
 from options_analysis.domain import PutCall, StrategyDraftDefinition
+from options_analysis.domain.research import ManualResearchRequest
 from options_analysis.errors import ErrorCategory, ErrorDetail, error_detail
 from options_analysis.providers import OptionChainQuery, PriceHistoryQuery
 from options_analysis.providers.errors import ProviderError
 from options_analysis.web.models import (
     AddWatchlistItemRequest,
     AnalyzePositionsRequest,
+    ManualResearchResult,
     PositionAnalysisResult,
     PriceHistoryResult,
     PriceHistorySnapshot,
@@ -364,6 +367,10 @@ def create_app(
             scenario_moves=request.scenario_moves,
         )
         return PositionAnalysisResult(analysis=analysis)
+
+    @app.post("/api/v1/research/analyze", response_model=ManualResearchResult)
+    def research_position(request: ManualResearchRequest) -> ManualResearchResult:
+        return ManualResearchResult(analysis=analyze_manual_position(request))
 
     if frontend_available:
         app.mount(

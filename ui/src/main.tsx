@@ -5,10 +5,15 @@ import App from "./App";
 import { applyThemePreference, loadThemePreference } from "./preferences";
 import "./styles.css";
 
-applyThemePreference(
-  document.documentElement,
-  loadThemePreference(window.localStorage),
-);
+try {
+  applyThemePreference(
+    document.documentElement,
+    loadThemePreference(window.localStorage),
+  );
+} catch {
+  // Some browser policies throw while accessing localStorage itself.
+  applyThemePreference(document.documentElement, "system");
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

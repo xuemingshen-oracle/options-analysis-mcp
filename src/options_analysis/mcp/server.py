@@ -8,13 +8,16 @@ from mcp.server import MCPServer
 from pydantic import Field
 
 from options_analysis import __version__
+from options_analysis.analytics.research import analyze_manual_position
 from options_analysis.bootstrap import Application, build_application
 from options_analysis.config import AppSettings
 from options_analysis.domain import PositionRequestLeg, PutCall, ValuationMode
+from options_analysis.domain.research import ManualResearchRequest
 from options_analysis.mcp.errors import tool_error
 from options_analysis.mcp.models import (
     ExpirationListResult,
     ExpirationSummary,
+    ManualResearchResult,
     OptionChainResult,
     OptionQuoteListResult,
     PositionAnalysisResult,
@@ -68,6 +71,7 @@ def _register_foundation_tools(server: MCPServer, application: Application) -> N
                 "market_data",
                 "technical_analysis",
                 "position_analysis",
+                "manual_research",
             ),
         )
 
@@ -244,6 +248,21 @@ def _register_foundation_tools(server: MCPServer, application: Application) -> N
         except (ProviderError, ValueError) as error:
             return PriceHistoryResult(error=tool_error(error))
         return PriceHistoryResult(bars=bars, indicators=indicator_series)
+
+    @server.tool(name="options_analyze_manual_position")
+    def options_analyze_manual_position(
+        request: ManualResearchRequest,
+    ) -> ManualResearchResult:
+        """Research standard stock/options without a provider.
+
+        Quantities are signed, premiums per underlying unit, IV/rates decimals.
+        Current marks are optional. Black-Scholes-Merton estimates omit early
+        exercise and stop at the earliest expiry; they are not trade quotes.
+        """
+        try:
+            return ManualResearchResult(analysis=analyze_manual_position(request))
+        except ValueError as error:
+            return ManualResearchResult(error=tool_error(error))
 
     @server.tool(name="options_analyze_positions")
     async def options_analyze_positions(

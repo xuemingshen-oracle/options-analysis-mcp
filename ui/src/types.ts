@@ -15,6 +15,8 @@ export interface OptionTerms {
   put_call: PutCall;
   strike: DecimalValue;
   multiplier: DecimalValue;
+  is_adjusted?: boolean | null;
+  deliverables?: string[];
 }
 
 export interface Instrument {

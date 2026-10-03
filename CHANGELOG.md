@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased — mobile follow-up
+
+- Add phone-specific Position/Analysis/Plan sections, collapsible legs, larger
+  touch controls, readable payoff/scenario views and keyboard-aware actions.
+- Add safe-area bottom navigation, a mobile settings/help dialog, and improved
+  market-explorer controls while retaining the desktop layout and themes.
+- Supply Safari Home Screen metadata and app icons with standalone launch
+  support; document same-Wi-Fi installation and browser-local backups.
+- Accept explicit `--host`/`--port` server arguments for trusted-LAN access;
+  retain the default `127.0.0.1:8000` startup.
+- Add iPhone/WebKit and Android/Chromium browser regression coverage.
+
+## 0.9.0 — 2026-10-02
+
+- Make the provider-independent position workbench the main application flow,
+  with signed stock/call/put legs, exact terminal risk, per-leg accounting,
+  modeled price/time/IV scenarios, optional mark-calibrated IV, and scenario
+  delta/gamma roadmaps.
+- Keep entry P/L and change from today separate; include explicit fee reserves,
+  loss-budget sizing, assumption disclosures and deterministic review findings.
+- Add saved personal setups, an autosaved trading plan, JSON backup/import and
+  local ChatGPT review briefs. Preserve incomplete drafts without losing the library.
+- Connect quoted market-explorer strategies to manual research; expose
+  mark/midpoint/closing valuation and retain drafts when switching symbols.
+- Correct scenario percentages, unknown entry basis, incomplete Greeks,
+  liquidation fallback disclosure, nonstandard-deliverable guards and payoff tails.
+- Add HTTP/MCP manual-position analysis, browser workflow tests and responsive
+  visual checks. Bundle the production UI for one-process local use.
+- Protect saved setups from stale Undo snapshots, preserve edits through
+  analysis failures, and reject stale draft restores after navigation.
+- Keep the workbench available when browser storage is blocked, with portable
+  JSON export and an explicit persistence notice.
+- Keep adjustment and probability-assumption experiments on separate
+  `eshen/*` branches.
+
 ## 0.8.1 — 2026-09-14
 
 - Added SMA 10 as an independently selectable short-term price overlay beside

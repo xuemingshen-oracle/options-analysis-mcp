@@ -19,6 +19,7 @@ from options_analysis.domain import (
     ValuationMode,
     WatchlistItem,
 )
+from options_analysis.domain.research import ManualResearchAnalysis
 from options_analysis.errors import ErrorDetail
 
 
@@ -129,4 +130,9 @@ class AnalyzePositionsRequest(WebModel):
 
 class PositionAnalysisResult(WebModel):
     analysis: PositionAnalysis | None = None
+    error: ErrorDetail | None = None
+
+
+class ManualResearchResult(WebModel):
+    analysis: ManualResearchAnalysis | None = None
     error: ErrorDetail | None = None

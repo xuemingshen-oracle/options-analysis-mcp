@@ -1,4 +1,4 @@
-.PHONY: sync web-sync format lint type test check build release-check run web-api web-ui web-test web-build
+.PHONY: sync web-sync format lint type test check build release-check run web-api web-ui web-test web-build web-e2e
 
 UV ?= uv
 
@@ -45,3 +45,6 @@ web-test:
 
 web-build:
 	cd ui && npm run build
+
+web-e2e:
+	cd ui && npm run test:e2e

@@ -227,6 +227,42 @@ describe("strategy template generation", () => {
     ]);
   });
 
+  it("preserves unknown entry prices instead of inventing a cost basis", () => {
+    const quote = option("put", 95);
+    const analysis = {
+      positions: [{
+        instrument: quote.instrument,
+        quantity: -2,
+        average_open_price: null,
+        current_quote: quote,
+        market_value: -400,
+        cost_basis: null,
+      }],
+    } as PositionAnalysis;
+
+    const legs = draftFromAnalysis(analysis);
+
+    expect(legs[0].entryPrice).toBeNull();
+    expect(toAnalysisRequestLegs(legs)[0].average_open_price).toBeNull();
+    expect(toStrategyDraftLegs(legs)[0].average_open_price).toBeNull();
+  });
+
+  it("preserves a real zero entry price when restoring a position", () => {
+    const quote = option("put", 95);
+    const analysis = {
+      positions: [{
+        instrument: quote.instrument,
+        quantity: 1,
+        average_open_price: 0,
+        current_quote: quote,
+        market_value: 200,
+        cost_basis: 0,
+      }],
+    } as PositionAnalysis;
+
+    expect(draftFromAnalysis(analysis)[0].entryPrice).toBe(0);
+  });
+
   it("explains when current chain filters omit required contracts", () => {
     const source = workspace();
     source.chain.contracts = source.chain.contracts.filter(

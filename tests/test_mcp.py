@@ -16,6 +16,7 @@ async def test_foundation_tools_over_real_in_memory_mcp_protocol() -> None:
         listed = await client.list_tools()
         names = {tool.name for tool in listed.tools}
         assert names == {
+            "options_analyze_manual_position",
             "options_analyze_positions",
             "options_get_option_chain",
             "options_get_option_expirations",
@@ -168,6 +169,7 @@ async def test_foundation_tools_over_stdio_subprocess() -> None:
     async with Client(parameters, read_timeout_seconds=10) as client:
         listed = await client.list_tools()
         assert {tool.name for tool in listed.tools} == {
+            "options_analyze_manual_position",
             "options_analyze_positions",
             "options_get_option_chain",
             "options_get_option_expirations",

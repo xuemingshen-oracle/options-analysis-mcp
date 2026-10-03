@@ -1,6 +1,6 @@
 # Durable Project Backlog
 
-Last updated: 2026-09-14
+Last updated: 2026-10-02
 
 This file is the canonical cross-session task list. `STATUS.md` describes the
 current checkpoint; this file records what remains and the order in which to do
@@ -18,12 +18,29 @@ Statuses are `in_progress`, `ready`, `blocked`, `backlog`, `deferred`, and
 5. Keep stable IDs when tasks are refined; add child IDs instead of replacing
    history.
 
+## Personal workbench checkpoint
+
+Core work is on `eshen/main`; experiments remain on separate `eshen/*` branches.
+
+| ID | Status | Work item | Completion evidence |
+| --- | --- | --- | --- |
+| LAB-010 | done | Provider-independent manual position analysis and exact signed accounting | Model identities, known payoffs, HTTP/MCP validation |
+| LAB-020 | done | Price/time/IV roadmaps, mark-calibrated IV, per-leg value and scenario Greeks | Model/finite-difference tests; browser workflow tests |
+| LAB-030 | done | Personal plans, loss budgets, named setups, backups and ChatGPT briefs | Persistence/import/export regression tests |
+| LAB-040 | done | Responsive workbench and market-explorer transfer | Desktop/mobile/dark/large-text inspection and browser tests |
+| LAB-050 | done | Explicit prototype correctness fixes for basis, scenario units and unsupported terms | Regressions in position analysis and explorer helpers |
+| LAB-060 | ready | Evaluate hold/close/adjust report on `eshen/adjustment-lab` | Isolated prototype; inspect fills, fees and comparison assumptions before merging |
+| LAB-070 | ready | Evaluate conditional distribution report on `eshen/distribution-lab` | Isolated prototype; do not present conditional estimates as forecasts |
+| LAB-080 | backlog | Explore durable review-history snapshots and outcome attribution | Define desired review cadence and realized-cash-flow tracking |
+| LAB-090 | backlog | Add an American exercise model only if scenario decisions need it | Benchmark against trusted pricing data and dividend schedules |
+| LAB-100 | backlog | Consider authenticated server-side workbench sync for multiple devices | Current browser storage plus export/import remains explicit |
+
 ## Active sequence
 
 | ID | Status | Work item | Depends on | Completion evidence |
 | --- | --- | --- | --- | --- |
 | UI-010 | done | Milestone 6B: SQLite-backed watchlist service, CRUD API, and persistent React controls | UI-001 code | CRUD/restart tests, proxy CRUD check, release check |
-| UI-011 | blocked | Desktop UI approved by owner; narrow-viewport inspection remains | Browser-control availability or owner inspection | Narrow viewport screenshot or inspection notes |
+| UI-011 | done | Desktop and narrow-viewport visual inspection | Working Chromium browser | Workbench and explorer browser QA; see docs/WORKBENCH_QA.md |
 | UI-020 | done | Milestone 6C: chain explorer with strike range, expiration/DTE, side, liquidity, and moneyness filters | UI-010 | API filter and TypeScript view-model tests |
 | UI-021 | done | Add sortable chain columns and clear stale/missing-data indicators | UI-020 | Sort tests and visible freshness/warning summary |
 | UI-022 | done | Add contract selection from calls/puts into a draft leg tray | UI-020 | Buy/sell/quantity/remove UI with production build |
@@ -38,7 +55,7 @@ Statuses are `in_progress`, `ready`, `blocked`, `backlog`, `deferred`, and
 | UI-053 | done | Milestone 6I: adjustable, browser-persisted interface font size | Owner desktop feedback | Keyboard-operable 90–130% controls, persistence unit tests, production build |
 | UI-054 | done | Milestone 6J: underlying price chart with 1-minute, 5-minute, daily, weekly, and monthly views | UI-053, provider history capability | Bounded HTTP history contract, responsive SVG chart, five-resolution API and rendering tests |
 | UI-055 | done | Milestone 6L: persistent light, dark, and system-selected themes with accessible semantic color tokens | UI-054 | 30 frontend tests, contrast/token checks, pre-paint initializer, production build |
-| UI-055A | blocked | Owner visual confirmation of light/dark/system modes at desktop and narrow widths | UI-055, working browser-control connection or owner inspection | Screenshots or inspection notes; functional milestone is complete |
+| UI-055A | done | Agent visual verification of light/dark modes at desktop and narrow widths; owner aesthetic feedback remains optional | UI-055 | Screenshots, no document overflow, 130% typography and accessibility checks |
 | UI-056 | backlog | Evaluate optional additional palettes/accent customization after using light/dark modes | UI-055A | Owner-selected palette and contrast specification |
 | UI-057 | done | Milestone 6M: provider-neutral SMA 20/50 overlays with independent chart controls | UI-054 | HTTP/MCP calculation contracts, UI rendering tests, production build |
 | UI-058 | done | Milestone 6N: add SMA 10 as a curated short-term overlay | UI-057 | Updated discovery metadata, accessible control, theme color, tests, and production build |

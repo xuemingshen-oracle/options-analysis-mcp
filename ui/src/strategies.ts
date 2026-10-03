@@ -12,7 +12,7 @@ export interface DraftLeg {
   quote: Quote;
   action: "buy" | "sell";
   quantity: number;
-  entryPrice: number;
+  entryPrice: number | null;
 }
 
 export class StrategyBuildError extends Error {}
@@ -48,8 +48,7 @@ export function draftFromAnalysis(analysis: PositionAnalysis): DraftLeg[] {
       quote: position.current_quote,
       action: quantity > 0 ? "buy" : "sell",
       quantity: Math.abs(quantity),
-      entryPrice:
-        decimal(position.average_open_price) ?? entryPrice(position.current_quote),
+      entryPrice: decimal(position.average_open_price),
     };
   });
 }

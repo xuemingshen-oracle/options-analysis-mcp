@@ -190,11 +190,12 @@ export async function analyzePositions(
   legs: AnalysisRequestLeg[],
   provider: string,
   signal?: AbortSignal,
+  valuationMode: "mark" | "midpoint" | "liquidation" = "mark",
 ): Promise<PositionAnalysis> {
   const response = await fetch("/api/v1/analyses/positions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ legs, provider }),
+    body: JSON.stringify({ legs, provider, valuation_mode: valuationMode }),
     signal,
   });
   const result = (await response.json()) as PositionAnalysisResult;

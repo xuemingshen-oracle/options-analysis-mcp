@@ -1,34 +1,54 @@
 # Project Status and Continuation Handoff
 
-Last updated: 2026-09-14
+Last updated: 2026-10-03
 
 ## Current state
 
-Milestone 6N short-term moving average is complete on `codex/milestone-6n`.
-The browser requests SMA 10, SMA 20, and SMA 50 for each underlying-history
-resolution and lets the user show or hide each overlay independently. Pure
-calculators run over canonical bars behind the Milestone 6M bounded discovery
-registry and are exposed consistently through HTTP and MCP. Provider adapters
-remain unchanged.
+Option Atlas 0.9.0 is developed on `eshen/main`. The default landing page is a
+provider-independent personal position workbench; the original market explorer
+remains available in a separate workspace tab. The shared conversation was
+successfully reviewed and informed the accounting, price/date roadmaps,
+short-option time-value breakdown and negative-delta/gamma exploration.
+No private positions or conversation exports were added to the repository.
 
-Milestone 6L previously added persistent system/light/dark appearance themes.
-Owner visual confirmation remains tracked separately because browser control
-could not attach in that session.
+The workbench accepts signed stock/call/put legs, user entry/current prices,
+explicit multipliers, dates and per-leg IV. It calculates exact compatible
+expiry payoff/risk/break-evens and European price/time/IV scenarios, optionally
+calibrating IV from entered marks. P/L since entry and change from today are
+separate. Scenario dates, per-leg accounting, modeled Greeks, loss-budget sizing
+and rule-based review make assumptions inspectable.
 
-Milestone 6K also added the credential-free `replay` provider for strict,
-versioned, size-bounded canonical quote, chain, and history bundles.
+A browser-local library stores named setups and trade plans. JSON export/import
+and a ChatGPT review brief make the data portable. Incomplete drafts survive
+reload without erasing the library. Explorer drafts/watchlists remain in SQLite;
+quoted positions can transfer into the workbench after entry basis is complete.
 
-Live Schwab activation is paused. Credentials for the first developer app were
-exposed outside their intended secret store, that app was deactivated, the
-ignored local `.env` was deleted, and no local token file was created. Do not
-reuse those credentials. Obtain replacement credentials through Schwab
-Developer Support or a replacement app, then authorize only on the retained
-machine.
+See `docs/WORKBENCH.md` for the accounting contract, model scope and commands.
+The latest validation evidence is recorded in `docs/WORKBENCH_QA.md`.
+
+The phone interface now has Position/Analysis/Plan sections, collapsible legs,
+larger touch controls, readable charts/scenario cards, bottom navigation and
+keyboard-aware actions. Safari Home Screen metadata/icons and an in-app help
+dialog support a standalone launch. Start with `--host 0.0.0.0` for explicit
+trusted-LAN access; the normal command remains loopback-only. The Mac/server
+must stay running. See `docs/MOBILE.md` for installation and backup guidance.
+
+Experiments are isolated from core UI and remain unmerged:
+
+- `eshen/adjustment-lab`: explicit hold/close/adjust cash-flow comparison reports.
+- `eshen/distribution-lab`: conditional lognormal probability/expectation reports
+  for inspecting sensitivity to declared distribution assumptions.
+
+Live Schwab activation remains a local configuration task. This work does not
+claim a live provider check and does not place orders. The default market
+explorer provider is synthetic. Manual workbench marks remain user supplied.
+Prior developer-app credentials were deactivated; do not reuse them. Obtain
+replacement credentials and authorize only on the retained machine.
 
 Repository: https://github.com/xuemingshen-oracle/options-analysis-mcp
 
-The canonical cross-session work queue is `TODO.md`. Update it with every
-milestone; do not rely on chat history as the backlog.
+`TODO.md` remains the cross-session backlog. Use `eshen/*` branches; do not
+resume the former `codex/milestone-*` naming convention.
 
 ## Milestone checklist
 
@@ -111,6 +131,7 @@ milestone; do not rely on chat history as the backlog.
 - `options_get_option_chain`
 - `options_get_option_quotes`
 - `options_get_price_history` (optional registered indicator specifications)
+- `options_analyze_manual_position`
 - `options_analyze_positions`
 
 Every tool result now includes `error`; it is null on success and contains a
@@ -131,11 +152,12 @@ stable, secret-safe detail object for handled failures.
 
 ## Verification evidence
 
-Milestone 6N release checks pass: formatting and lint are clean, mypy strict
-reports no issues across 63 source files, all 94 Python tests and 31 TypeScript
-tests pass, and the React production bundle plus Python source/wheel
-distributions build successfully. Detailed design and limitations are recorded
-in `docs/MILESTONE_6N.md`.
+The 0.9.0 workbench passes Python formatting/lint and strict typing, 209 Python
+tests, 72 TypeScript tests and 15 Chromium browser tests. Browser coverage checks accounting, calendar
+boundaries, persistence, provider transfer, accessibility and responsive layout.
+The React production bundle and Python source/wheel distributions build.
+See `docs/WORKBENCH_QA.md` for commands, scope and remaining verification limits.
+Earlier milestone evidence remains in `docs/MILESTONE_6N.md`.
 
 ## Required owner activation
 
@@ -161,11 +183,10 @@ freshness timestamps, reconnect/resubscribe tests, and no order functionality.
 
 ## Resume prompt for another session
 
-Continue the provider-pluggable options-analysis project at
-`/Users/xuemingshen/Workspaces/schwab`. Read `README.md`, `SECURITY.md`,
-`STATUS.md`, `TODO.md`, and the latest milestone note. Inspect Git and the latest
-milestone tag. Take the lowest-numbered `ready` item in `TODO.md`, or ask the
-owner to choose among backlog items if none is ready. Preserve the
-provider-neutral, local-only, read-only, bounded, and secret-safe boundaries.
-Run `make release-check` and push a new checkpoint. Never commit secrets or
+Continue the options-analysis project from `eshen/main`. Read `README.md`,
+`SECURITY.md`, `STATUS.md`, `TODO.md`, and `docs/WORKBENCH.md`. Inspect Git before
+editing. Discuss a new objective if no task is already authorized; do not merge
+the isolated experiments by default. Preserve the provider-neutral, local-only,
+read-only, bounded, and secret-safe boundaries. Run relevant checks and commit
+on `eshen/*`. Push or publish only when requested. Never commit secrets or
 private responses.

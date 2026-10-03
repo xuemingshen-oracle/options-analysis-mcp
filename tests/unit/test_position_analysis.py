@@ -2,10 +2,13 @@ from decimal import Decimal
 
 import pytest
 
+from options_analysis.analytics import analyze_enriched_positions
 from options_analysis.bootstrap import build_application
 from options_analysis.config import AppSettings
 from options_analysis.domain import (
     AssetType,
+    DataQualityWarning,
+    OptionGreeks,
     PositionRequestLeg,
     ValuationMode,
 )
@@ -246,3 +249,153 @@ async def test_straddle_and_strangle_match_hand_calculated_payoffs() -> None:
     assert strangle.break_even_prices == (Decimal("91"), Decimal("109"))
     assert strangle.max_profit_bounded is False
     assert strangle.max_loss == Decimal("-400")
+
+
+@pytest.mark.asyncio
+async def test_quote_warnings_are_visible_in_combined_analysis() -> None:
+    quote = (await FakeProvider().get_option_quotes(("SPY300118C00100000",)))[0]
+    quote = quote.model_copy(
+        update={
+            "warnings": (
+                DataQualityWarning(
+                    code="stale_quote", message="The quote is stale.", fields=("as_of",)
+                ),
+            )
+        }
+    )
+    leg = PositionAnalysisService._enrich(
+        option_leg(quote.instrument.symbol, "1", "5"), quote, ValuationMode.MARK
+    )
+
+    result = analyze_enriched_positions(
+        (leg,),
+        provider_id="fake",
+        valuation_mode=ValuationMode.MARK,
+        scenario_moves=(Decimal("0"),),
+    )
+
+    warning = next(item for item in result.warnings if item.code == "stale_quote")
+    assert quote.instrument.symbol in warning.message
+    assert warning.fields == ("positions[0].current_quote.as_of",)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terms_update",
+    [{"is_adjusted": True}, {"deliverables": ("50 SPY shares plus cash",)}],
+)
+async def test_nonstandard_terms_do_not_receive_standard_intrinsic_payoff(
+    terms_update: dict[str, object],
+) -> None:
+    quote = (await FakeProvider().get_option_quotes(("SPY300118C00100000",)))[0]
+    assert quote.instrument.option is not None
+    instrument = quote.instrument.model_copy(
+        update={"option": quote.instrument.option.model_copy(update=terms_update)}
+    )
+    quote = quote.model_copy(update={"instrument": instrument})
+    leg = PositionAnalysisService._enrich(
+        option_leg(instrument.symbol, "1", "5"), quote, ValuationMode.MARK
+    )
+
+    result = analyze_enriched_positions(
+        (leg,),
+        provider_id="fake",
+        valuation_mode=ValuationMode.MARK,
+        scenario_moves=(Decimal("0"),),
+    )
+
+    assert result.payoff_points == ()
+    assert result.break_even_prices == ()
+    assert result.max_profit_bounded is None
+    assert result.max_loss_bounded is None
+    assert "unsupported_payoff_terms" in {item.code for item in result.warnings}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("quantity,side", [("1", "bid"), ("-1", "ask")])
+async def test_missing_liquidation_side_discloses_fallback(
+    quantity: str,
+    side: str,
+) -> None:
+    quote = (await FakeProvider().get_option_quotes(("SPY300118C00100000",)))[0]
+    quote = quote.model_copy(update={side: None, "mark": Decimal("2.75")})
+    leg = PositionAnalysisService._enrich(
+        option_leg(quote.instrument.symbol, quantity, "5"),
+        quote,
+        ValuationMode.LIQUIDATION,
+    )
+
+    result = analyze_enriched_positions(
+        (leg,),
+        provider_id="fake",
+        valuation_mode=ValuationMode.LIQUIDATION,
+        scenario_moves=(Decimal("0"),),
+    )
+
+    assert result.net_market_value == Decimal(quantity) * Decimal("275")
+    warning = next(
+        item for item in result.warnings if item.code == "liquidation_price_unavailable"
+    )
+    assert f"Liquidation {side} is unavailable" in warning.message
+    assert "mark as a fallback estimate" in warning.message
+    # Enrichment must not mutate cached provider quotes.
+    assert not quote.warnings
+
+
+@pytest.mark.asyncio
+async def test_partial_greeks_suppress_price_scenario_estimate() -> None:
+    quote = (await FakeProvider().get_option_quotes(("SPY300118C00100000",)))[0]
+    quote = quote.model_copy(update={"greeks": OptionGreeks(delta=Decimal("0.5"))})
+    leg = PositionAnalysisService._enrich(
+        option_leg(quote.instrument.symbol, "1", "5"), quote, ValuationMode.MARK
+    )
+
+    result = analyze_enriched_positions(
+        (leg,),
+        provider_id="fake",
+        valuation_mode=ValuationMode.MARK,
+        scenario_moves=(Decimal("0.10"),),
+    )
+
+    assert result.aggregate_greeks.delta.complete is True
+    assert result.aggregate_greeks.gamma.complete is False
+    assert result.scenarios[0].estimated_profit_loss is None
+    warning = next(item for item in result.warnings if item.code == "incomplete_greeks")
+    assert "partial sums" in warning.message
+
+
+@pytest.mark.asyncio
+async def test_scenario_change_is_dollars_and_estimate_is_change_from_today() -> None:
+    quote = (await FakeProvider().get_option_quotes(("SPY300118C00100000",)))[0]
+    quote = quote.model_copy(
+        update={
+            "underlying_price": Decimal("200"),
+            "greeks": OptionGreeks(delta=Decimal("0.5"), gamma=Decimal("0.01")),
+        }
+    )
+    leg = PositionAnalysisService._enrich(
+        option_leg(quote.instrument.symbol, "1", "8"), quote, ValuationMode.MARK
+    )
+
+    result = analyze_enriched_positions(
+        (leg,),
+        provider_id="fake",
+        valuation_mode=ValuationMode.MARK,
+        scenario_moves=(Decimal("0"), Decimal("0.10")),
+    )
+
+    assert result.scenarios[0].estimated_profit_loss == 0
+    assert result.scenarios[1].underlying_change == Decimal("20")
+    assert result.scenarios[1].underlying_price == Decimal("220")
+    # 50 shares delta * $20 + (1 gamma * $20²) / 2.
+    assert result.scenarios[1].estimated_profit_loss == Decimal("1200")
+
+
+@pytest.mark.asyncio
+async def test_payoff_chart_includes_the_tail_beyond_the_highest_strike() -> None:
+    service = build_application(AppSettings(_env_file=None)).position_analysis_service
+
+    result = await service.analyze((option_leg("SPY300118C00500000", "1", "5"),))
+
+    assert result.payoff_points[-1].underlying_price > Decimal("500")
+    assert result.payoff_points[-1].position_value > 0

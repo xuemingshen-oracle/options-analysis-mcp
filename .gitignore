@@ -17,6 +17,8 @@ build/
 *.egg-info/
 ui/node_modules/
 ui/dist/
+ui/playwright-report/
+ui/test-results/
 
 # Never commit provider credentials, OAuth tokens, or captured private data.
 credentials/

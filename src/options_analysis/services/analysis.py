@@ -5,6 +5,7 @@ from decimal import Decimal
 from options_analysis.analytics import analyze_enriched_positions
 from options_analysis.domain import (
     AssetType,
+    DataQualityWarning,
     PositionAnalysis,
     PositionLeg,
     PositionRequestLeg,
@@ -87,6 +88,35 @@ class PositionAnalysisService:
         elif quote.instrument.asset_type not in {AssetType.EQUITY, AssetType.ETF}:
             raise ValueError(f"{request.symbol!r} did not resolve to equity or ETF")
         price = PositionAnalysisService._valuation_price(quote, request.quantity, mode)
+        if mode is ValuationMode.LIQUIDATION:
+            side = "bid" if request.quantity > 0 else "ask"
+            if getattr(quote, side) is None:
+                source = (
+                    "mark"
+                    if quote.mark is not None
+                    else "last trade"
+                    if quote.last is not None
+                    else None
+                )
+                message = (
+                    f"Liquidation {side} is unavailable. Current value uses the "
+                    f"{source} as a fallback estimate, not an executable close price."
+                    if source is not None
+                    else f"Liquidation {side} and fallback prices are unavailable; "
+                    "current value cannot be estimated."
+                )
+                quote = quote.model_copy(
+                    update={
+                        "warnings": (
+                            *quote.warnings,
+                            DataQualityWarning(
+                                code="liquidation_price_unavailable",
+                                message=message,
+                                fields=(side,),
+                            ),
+                        )
+                    }
+                )
         multiplier = (
             quote.instrument.option.multiplier
             if quote.instrument.option is not None
